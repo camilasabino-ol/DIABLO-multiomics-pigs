@@ -14,20 +14,24 @@ obtained input files and a suitable R package environment. The cleaned scripts
 have not been executed end-to-end in the target R environment; this is an
 important distinction from verification of the **archived model**.
 
+## Repository layout
+
+All R scripts and documentation files are stored in the repository root (top-level folder).
+
 ## Script index
 
 | File | Purpose |
 | --- | --- |
-| `preprocessing/01_candidate_gene_lists.R` | Deduplicate candidate-gene lists from the 3 tissue spreadsheets |
-| `preprocessing/02_QC_gene_TPM_Top1000.R` | Filter genes (TPM > 1 in ≥50% of animals), compare across tissues, rank by expression SD and map Ensembl IDs to symbols |
-| `preprocessing/03_microbiota_fezes.R` | Fecal ASV prevalence, genus aggregation, CZM and CLR |
-| `preprocessing/04_microbiota_ceco.R` | Cecal ASV prevalence, genus aggregation, CZM and CLR |
-| `preprocessing/05_fatty_acid_total_sum.R` | Generalized total-sum percentage normalization for muscle, liver and brain |
-| `preprocessing/06_phenotype_normality_QC.R` | Shapiro–Wilk screening (p > 0.05) of phenotypes; final selected variables used without log/sqrt transformation |
-| `scripts/01_fit_DIABLO_FUTURE_RERUN.R` | Model fitting, perf() and tune.block.splsda(); **prospective rerun only** |
-| `scripts/02_figures_from_archived_model.R` | Plots, loading tables and visualizations using a fitted model |
-| `scripts/03_Figure5_from_archived_model.R` | Corrected Figure 5 heatmap without fitting |
-| `scripts/04_environment_versions.R` | Current software version report (not a historical version record) |
+| `01_candidate_gene_lists.R` | Deduplicate candidate-gene lists from the 3 tissue spreadsheets |
+| `02_QC_gene_TPM_Top1000.R` | Filter genes (TPM > 1 in ≥50% of animals), compare across tissues, rank by expression SD and map Ensembl IDs to symbols |
+| `03_microbiota_fezes.R` | Fecal ASV prevalence, genus aggregation, CZM and CLR |
+| `04_microbiota_ceco.R` | Cecal ASV prevalence, genus aggregation, CZM and CLR |
+| `05_fatty_acid_total_sum.R` | Generalized total-sum percentage normalization for muscle, liver and brain |
+| `06_phenotype_normality_QC.R` | Shapiro–Wilk screening (p > 0.05) of phenotypes; final selected variables used without log/sqrt transformation |
+| `01_fit_DIABLO_FUTURE_RERUN.R` | Model fitting, perf() and tune.block.splsda(); **prospective rerun only** |
+| `02_figures_from_archived_model.R` | Plots, loading tables and visualizations using a fitted model |
+| `03_Figure5_from_archived_model.R` | Corrected Figure 5 heatmap without fitting |
+| `04_environment_versions.R` | Current software version report (not a historical version record) |
 
 ## Functional annotation and transcriptome selection
 
@@ -85,14 +89,14 @@ The final 44-sample subset is the one in the archived DIABLO input matrices.
 - The original input matrices were checked against the RDS: exactly matching
   sample and feature names/order and values after z-scoring (within floating-
   point precision, maximum deviations near 1e-15).
-- Exact final `keepX` values: `docs/ARCHIVED_MODEL_PARAMETERS.md`.
+- Exact final `keepX` values: `ARCHIVED_MODEL_PARAMETERS.md`.
 
 ## Reproducibility and software
 
 The archived RDS reports **R 4.5.1** as the serialization writer version. An
 original script comment mentions `mixOmics 6.28.0` used in November 2025;
 that note **does not independently establish** the package version at the
-August 2026 final-model run. `scripts/04_environment_versions.R` reports
+August 2026 final-model run. `04_environment_versions.R` reports
 packages installed in a current environment; it must not be misrepresented
 as historical `sessionInfo()`.
 
@@ -111,7 +115,7 @@ mechanism should be stated in the accompanying manuscript's data-availability
 section; do not upload raw/derived animal-level data or archived model without
 appropriate permissions.
 
-The script `scripts/01_fit_DIABLO_FUTURE_RERUN.R` expects inputs in `data/` (or
+The script `01_fit_DIABLO_FUTURE_RERUN.R` expects inputs in `data/` (or
 `DIABLO_INPUT_DIR`) and writes **new** results to `results/` (or
 `DIABLO_OUTPUT_DIR`); it is not needed to recreate images from an archived RDS.
 Run image generation only with the necessary mixOmics packages available.
@@ -121,4 +125,4 @@ Run image generation only with the necessary mixOmics packages available.
 The source model and its original inputs were verified. Reorganized scripts have
 **not** been run end-to-end with all upstream source tables; specific method
 steps (e.g. phenotype name mapping and derived FA calculations) are described
-and not presented as independently regenerated. See `docs/READINESS_NOTE.md`.
+and not presented as independently regenerated. See `READINESS_NOTE.md`.

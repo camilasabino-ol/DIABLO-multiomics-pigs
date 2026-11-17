@@ -1,561 +1,131 @@
-# DIABLO figures and loading tables from archived model (DRAFT)
-# Derived from the original submitted visualization code, preserving 0.80
-# correlation cutoffs and the final model's first two components.
-#
-# This is not a fresh DIABLO fit and does NOT modify any original files.
-# Run with: Rscript scripts/02_figures_from_archived_model.R \
-#   data/final_diablo_model.rds results/figures
-# Only run in an R environment with mixOmics and plot dependencies installed.
-# Visual outputs need comparison with the manuscript before publication.
-
+# Recreate revised manuscript Figures 1–5 from the archived fitted DIABLO model.
+# No model fitting, tuning or cross-validation is performed.
+# Usage: Rscript 02_figures_from_archived_model.R final_diablo_model.rds results/figures [all_loadings.txt]
+# The optional third argument is the verified historical loading/group-contribution table.
+# Consolidated from the figure-specific commands run during the manuscript revision.
+# Test the consolidated script in the target R environment before publication.
 suppressPackageStartupMessages({
   library(mixOmics)
   library(ggplot2)
-  library(igraph)
   library(cowplot)
   library(viridis)
 })
-
-args <- commandArgs(trailingOnly=TRUE)
-model_path <- if (length(args) >= 1) args[[1]] else 'data/final_diablo_model.rds'
-output_dir <- if (length(args) >= 2) args[[2]] else 'results/figures'
-if (!file.exists(model_path)) stop('Missing RDS file: ', model_path)
-final.diablo.model <- readRDS(model_path)
-if (!inherits(final.diablo.model, 'block.splsda')) stop('Unexpected RDS object class')
-Y <- final.diablo.model$Y
-if (!all(c('Soy','Fish','Canola') %in% unique(as.character(Y)))) {
-  stop('Expected Soy, Fish, Canola groups')
+a <- commandArgs(trailingOnly = TRUE)
+if (length(a) < 2) stop('Supply the archived RDS and a new output directory.')
+model <- readRDS(a[1])
+out <- a[2]
+if (dir.exists(out) && length(list.files(out, all.files=TRUE, no..=TRUE)))
+  stop('Output directory is not empty; use a new directory.')
+dir.create(out, recursive=TRUE, showWarnings=FALSE)
+f <- function(x) file.path(out, x)
+blocks <- c('Genes_MU','Genes_LI','Genes_BR','ASVs_CE','ASVs_FE','FA','PHENO')
+colors <- c(Soy='purple', Fish='gold', Canola='green')
+# Preserve the actual block colors in the revised figures (CE blue, FE brown).
+bcolors <- c(Genes_MU='#228B22', Genes_LI='#32CD32', Genes_BR='springgreen',
+             ASVs_CE='#4682B4', ASVs_FE='#8B4513', FA='orange', PHENO='red3')
+stopifnot(all(blocks %in% names(model$loadings)),
+          all(blocks %in% names(model$variates)),
+          identical(as.integer(table(factor(model$Y, levels=names(colors)))), c(18L,12L,14L)),
+          all(vapply(model$variates[blocks], ncol, integer(1)) == 5L))
+# Check loading names and signed values; do not use Y as a biological block.
+validate_loadings <- function(tab) {
+  for (i in 1:2) for (b in blocks) {
+    L <- model$loadings[[b]]
+    x <- setNames(L[,i], rownames(L)); x <- x[x != 0]
+    t <- subset(tab, Component == i & Tissue == b)
+    stopifnot(!anyDuplicated(t$Variable), setequal(names(x),t$Variable),
+      isTRUE(all.equal(as.numeric(x[t$Variable]), as.numeric(t$importance), tolerance=1e-7)))
+  }
+  stopifnot(all(tab$GroupContrib %in% names(colors)))
 }
-data <- final.diablo.model$X
-# The original code uses this named treatment color convention.
-treatment_colors <- c('Soy'='purple','Fish'='gold','Canola'='green')
-# All image files are written to the chosen output folder, not to original data.
-dir.create(output_dir, showWarnings=FALSE, recursive=TRUE)
-setwd(output_dir)
-
-#plots
-#component1
-png("omics_correlation_comp1.png", width = 10, height = 8,bg = "white",units = "in",res = 300)
-
-plotDiablo(final.diablo.model, ncomp = 1,col.per.group = c("purple","gold","green") ) 
-
+if (length(a) >= 3) {
+  tab <- read.delim(a[3], check.names=FALSE)
+  tab <- subset(tab, Component %in% 1:2 & Tissue %in% blocks)
+} else {
+  # The plotLoadings output provides contribution groups under the historical median/max rule.
+  # This extraction must be checked against the historical table if available.
+  tab <- (function() {
+    pdf(NULL, width=12, height=16)
+    on.exit(dev.off())
+    pieces <- list()
+    for (i in 1:2) {
+      o <- plotLoadings(model, comp=i, contrib='max', method='median',
+                        legend.color=unname(colors), size.legend=.8,
+                        legend.title='Groups', size.name=.55,
+                        title=paste('Component', i))
+      for (b in blocks) {
+        d <- as.data.frame(o[[b]])
+        d$Tissue <- b; d$Component <- i; d$Variable <- rownames(d)
+        pieces[[paste(i,b)]] <- d
+      }
+    }
+    d <- do.call(rbind,pieces)
+    subset(d, color != 'white')
+  })()
+}
+validate_loadings(tab)
+write.table(tab, f('all_loadings_verified.txt'), sep='\t', row.names=FALSE, quote=FALSE)
+for (i in 1:2) {
+  d <- subset(tab, Component == i)
+  d$key <- reorder(paste(d$Tissue, d$Variable, sep='|'), d$importance)
+  p <- ggplot(d, aes(importance,key,color=GroupContrib)) +
+    geom_segment(aes(x=0,xend=importance,yend=key),color='darkgray',linewidth=.6) +
+    geom_point(size=3) +
+    scale_y_discrete(labels=function(x) sub('^[^|]*\\|','',x)) +
+    scale_color_manual(values=colors, breaks=c('Canola','Soy','Fish')) +
+    facet_grid(Tissue ~ ., scales='free_y',space='free_y') +
+    labs(title=paste('Component',i),x='Loading Score',y=NULL,color='Group Contribution') +
+    theme_minimal(base_size=12) + theme(axis.text.y=element_text(size=9,color='black'),
+      strip.background=element_rect(fill='gray90',color='gray70'),
+      strip.text=element_text(face='bold'),plot.title=element_text(hjust=.5,face='bold'),
+      legend.position='right')
+  ggsave(f(paste0('Figure1',LETTERS[i],'_final.png')),p,width=9,height=13,units='in',dpi=600,bg='white')
+}
+# Figure 2: same parameters as the revised server export.
+png(f('Figure2.png'),width=9,height=7.5,units='in',res=600,bg='white')
+correlations <- circosPlot(model,comp=c(1,2),cutoff=.8,line=TRUE,
+  color.blocks=unname(bcolors[blocks]),color.cor=c('lightblue','orange'),
+  size.labels=1,color.Y=unname(colors),size.variables=.45)
 dev.off()
-
-#component2
-png("omics_correlation_comp2.png", width = 10, height = 8,bg = "white",units = "in",res = 300)
-plotDiablo(final.diablo.model, ncomp = 2,col.per.group = c("purple","gold","green"))
+write.table(correlations,f('circos_similarity_matrix.txt'),sep='\t')
+# Figure 3: panel renders at 600 dpi before composition; export score correlations.
+for (i in 1:2) {
+  png(f(paste0('Figure3_comp',i,'.png')),width=10,height=8,units='in',res=600,bg='white')
+  plotDiablo(model,ncomp=i,col.per.group=unname(colors))
+  dev.off()
+  scores <- sapply(model$variates[blocks],function(x)x[,i])
+  write.table(cor(scores),f(paste0('block_correlations_comp',i,'.txt')),sep='\t')
+}
+figure3 <- plot_grid(ggdraw()+draw_image(f('Figure3_comp1.png')),
+                     ggdraw()+draw_image(f('Figure3_comp2.png')),ncol=1,labels=c('A','B'))
+ggsave(f('Figure3.png'),figure3,width=10,height=16,dpi=600,bg='white')
+# Figure 4A: only the seven biological blocks, matching the manuscript order.
+order4 <- c('ASVs_CE','ASVs_FE','FA','Genes_BR','Genes_LI','Genes_MU','PHENO')
+scores <- do.call(rbind,lapply(order4,function(b) data.frame(
+  Dimension1=model$variates[[b]][,1],Dimension2=model$variates[[b]][,2],
+  Group=factor(model$Y,levels=names(colors)),Block=b)))
+scores$Block <- factor(scores$Block,levels=order4)
+figure4A <- ggplot(scores,aes(Dimension1,Dimension2,color=Group)) +
+  geom_point(shape=1,size=2.2,stroke=.8) + stat_ellipse(type='norm',level=.95,linewidth=.9) +
+  facet_wrap(~Block,ncol=3,scales='fixed',labeller=label_both) +
+  scale_color_manual(values=colors) + coord_cartesian(xlim=c(-12,10),ylim=c(-8,10)) +
+  labs(x=NULL,y=NULL,color='Groups') + theme_minimal(base_size=11) +
+  theme(strip.background=element_rect(fill='gray85',color='gray40'),
+        strip.text=element_text(face='bold'),legend.position='right')
+ggsave(f('Figure4A_final.png'),figure4A,width=9,height=8,dpi=600,bg='white')
+figure4B <- plotArrow(model,group=model$Y,ind.names=FALSE,legend=TRUE,title='',
+  col.per.group=unname(colors),legend.title='Groups',style='ggplot2')
+if (!inherits(figure4B,'ggplot')) figure4B <- figure4B$graph
+stopifnot(inherits(figure4B,'ggplot'))
+figure4B <- figure4B + scale_color_manual(values=colors,breaks=names(colors),drop=FALSE)
+ggsave(f('Figure4B.png'),figure4B,width=9,height=8,dpi=600,bg='white')
+figure4 <- plot_grid(figure4A,ggdraw()+draw_image(f('Figure4B.png')),ncol=2,labels=c('A','B'))
+ggsave(f('Figure4_final.png'),figure4,width=18,height=8,dpi=600,bg='white')
+# Figure 5: preserve heatmap color mapping and sorted group labels.
+png(f('Figure5.png'),width=12,height=15,units='in',res=600,bg='white')
+cimDiablo(model,color.blocks=unname(bcolors[blocks]),comp=c(1,2),legend.position='topright',
+  color.Y=unname(colors[sort(unique(as.character(model$Y)))]),transpose=TRUE,row.names=FALSE,
+  size.legend=.8,color=viridis(n=100,option='magma'),trim=FALSE)
 dev.off()
-
-
-# Saving those figures as only one figure
-# Getting the images from our directory
-d1 <- ggdraw() + draw_image("omics_correlation_comp1.png")
-d2 <- ggdraw() + draw_image("omics_correlation_comp2.png")
-
-combined_plot <- plot_grid(d1, d2, ncol = 1, labels = c("A", "B"))
-
-# Saving the Figure
-
-ggsave("omics_correlation_combined_comp1_2.png", combined_plot, width = 10, height = 16, dpi = 300,bg = "white")
-
-
-# The sample plot with the plotIndiv() function projects each sample into the space spanned by the components from each block, resulting in a series of graphs corresponding to each data set
-explained.variance <- as.data.frame(final.diablo.model$prop_expl_var)
-write.table(explained.variance,row.names = TRUE,file = "explained_variance_blocks.txt",sep = "\t")
-
-############################################################
-# FIGURE 4A
-# Sample projection by omics block
-# Rebuilt manually to ensure that points and ellipses use
-# the same treatment colors in the archived plotting setup
-############################################################
-
-blocks_to_plot <- names(data)
-
-plot_indiv_data <- do.call(
-  rbind,
-  lapply(blocks_to_plot, function(block_name) {
-    
-    block_scores <- final.diablo.model$variates[[block_name]]
-    
-    data.frame(
-      Sample = rownames(block_scores),
-      Component1 = block_scores[, 1],
-      Component2 = block_scores[, 2],
-      Block = block_name,
-      Group = Y,
-      stringsAsFactors = FALSE
-    )
-  })
-)
-
-plot_indiv_data$Group <- factor(
-  plot_indiv_data$Group,
-  levels = c("Soy", "Fish", "Canola")
-)
-
-plot_indiv_data$Block <- factor(
-  plot_indiv_data$Block,
-  levels = blocks_to_plot
-)
-
-e1 <- ggplot(
-  plot_indiv_data,
-  aes(
-    x = Component1,
-    y = Component2,
-    color = Group
-  )
-) +
-  geom_point(
-    size = 1.5,
-    alpha = 0.85
-  ) +
-  stat_ellipse(
-    aes(group = Group),
-    type = "norm",
-    level = 0.95,
-    linewidth = 0.7,
-    show.legend = FALSE
-  ) +
-  facet_wrap(
-    ~ Block,
-    scales = "free",
-    ncol = 4
-  ) +
-  scale_color_manual(
-    values = treatment_colors,
-    breaks = c("Soy", "Fish", "Canola"),
-    drop = FALSE
-  ) +
-  labs(
-    x = NULL,
-    y = NULL,
-    color = "Groups"
-  ) +
-  theme_bw() +
-  theme(
-    strip.background = element_rect(
-      fill = "gray90",
-      color = "gray70"
-    ),
-    strip.text = element_text(
-      face = "bold",
-      size = 9
-    ),
-    axis.text = element_text(size = 7),
-    axis.title = element_blank(),
-    legend.position = "right",
-    legend.title = element_text(
-      face = "bold",
-      size = 9
-    ),
-    legend.text = element_text(size = 8),
-    panel.grid.major = element_line(
-      color = "gray90",
-      linewidth = 0.3
-    ),
-    panel.grid.minor = element_blank(),
-    plot.margin = margin(8, 8, 8, 8)
-  )
-
-ggsave(
-  filename = "block_plsda_blocked.png",
-  plot = e1,
-  width = 9,
-  height = 8,
-  units = "in",
-  dpi = 300,
-  bg = "white"
-)
-
-# In this next Figure I have returned to my final model and sum the total explained variance of each component and add here as x and y axis
-
-############################################################
-# FIGURE 4B
-# Arrow plot with standardized treatment colors
-############################################################
-
-e2 <- plotArrow(
-  final.diablo.model,
-  group = Y,
-  ind.names = FALSE,
-  legend = TRUE,
-  title = "",
-  col.per.group = unname(
-    treatment_colors[c("Soy", "Fish", "Canola")]
-  ),
-  legend.title = "Groups",
-  style = "ggplot2"
-)
-
-e2 <- e2 +
-  scale_color_manual(
-    values = treatment_colors,
-    breaks = c("Soy", "Fish", "Canola"),
-    labels = c("Soy", "Fish", "Canola"),
-    drop = FALSE
-  )
-
-ggsave(
-  filename = "block_plsda_unblocked.png",
-  plot = e2,
-  width = 9,
-  height = 8,
-  units = "in",
-  dpi = 300,
-  bg = "white"
-)
-
-
-#Joining the figures
-e3 <- ggdraw() + draw_image("block_plsda_blocked.png")
-e4 <- ggdraw() + draw_image("block_plsda_unblocked.png")
-
-combined_plot1 <- plot_grid(e3, e4, ncol = 2, labels = c("A", "B"))
-
-
-ggsave("multi-block_sPLS-DA_plots.png", combined_plot1, width = 18, height = 8, dpi = 300,bg = "white")
-
-#Variable plots
-png(filename = "correlation_circleplot.png",width = 8,height = 10,units = "in",bg = "white",res = 300)
-
-f1_transc <- plotVar(final.diablo.model, var.names = TRUE,
-                                  style = 'graphics', legend = TRUE,
-                                  pch = rep(16, 7),
-                                  cex = rep(1.0, 7),
-                                  col = c('#228B22',   # Genes_MU
-                                          '#32CD32',   # Genes_LI
-                                          'springgreen', # Genes_BR
-                                          '#4682B4',   # ASVs_FE
-                                          '#8B4513',   # ASVs_CE
-                                          'orange',    # FA
-                                          'red3'),     # PHENO
-                                  title = "",
-                                  overlap = FALSE,
-                                  blocks = c("Genes_MU","Genes_LI","Genes_BR", "ASVs_FE","ASVs_CE","FA","PHENO"),
-                                  legend.title = "Blocks")
-dev.off()
-
-
-### CIRCOS PLOT COM 7 BLOCOS (incluindo FA e PHENO)
-png(
-  filename = "circosplot.png",
-  width = 9, height = 7.5,
-  units = "in", bg = "white", res = 300
-)
-
-f2 <- circosPlot(
-  final.diablo.model,
-  comp = c(1, 2),   # <- ADICIONEI ESTA LINHA
-  cutoff = 0.80,
-  line = TRUE,
-  color.blocks = c(
-    '#228B22',   # Genes_MU
-    '#32CD32',   # Genes_LI
-    'springgreen', # Genes_BR
-    '#4682B4',   # ASVs_FE
-    '#8B4513',   # ASVs_CE
-    'orange',    # FA
-    'red3'       # PHENO
-  ),
-  color.cor = c("lightblue", "orange"),
-  size.labels = 1.0,
-  color.Y = c("purple", "gold", "green"),
-  size.variables = 0.45
-)
-
-dev.off()
-
-# Exportando a matriz de correlação do circos
-write.table(f2, "correlation_biomarkers.txt", sep = "\t")
-
-library(viridis)
-paleta_viridis <- viridis(n = 100, option = "A")
-
-png(
-  filename = "network1.png",
-  width = 15, height = 9,
-  units = "in", bg = "white", res = 400
-)
-
-f3 <- network(
-  final.diablo.model,
-  blocks = 1:7,  # agora temos 7 blocos em 'data'
-  color.node = c(
-    '#228B22',    # Genes_MU
-    '#32CD32',    # Genes_LI
-    'springgreen',# Genes_BR
-    '#4682B4',    # ASVs_FE
-    '#8B4513',    # ASVs_CE
-    'orange',     # FA
-    'red3'        # PHENO
-  ),
-  cutoff = 0.80,
-  graph.scale = 0.09,
-  cex.node.name = 0.6,
-  layout.fun = layout_in_circle,
-  shape.node = "rectangle",
-  size.node = 0.8,
-  lwd.edge = c(1, 1.5),
-  color.edge = paleta_viridis
-)
-
-dev.off()
-
-# Exportar rede para Cytoscape
-myNetwork <- f3
-write_graph(myNetwork$gR, file = "myNetwork.gml", format = "gml")
-
-#Joining the figures
-f4 <- ggdraw() + draw_image("correlation_circleplot.png")
-f5 <- ggdraw() + draw_image("circosplot.png")
-
-combined_plot2 <- plot_grid(f4,f5, ncol = 2, labels = c("A", "B"),rel_heights = c(1,2))
-
-
-ggsave("correlation_circos_network.png", combined_plot2, width = 10, height = 6, dpi = 500,bg = "white")
-
-
-
-png(filename = "biomarkers_candidates_1.png",width = 8,height = 12,units = "in",bg = "white",res = 300)
-g1 <- plotLoadings(final.diablo.model, comp = 1, contrib = 'max', method = 'median',legend.color = c("purple", "gold", "green"),size.legend = 0.8,legend.title = "Groups",size.name = 0.55,title = "Component 1")
-
-dev.off()
-
-
-# Exporting tables
-
-g1_table <- as.data.frame(g1$Genes_MU)
-g1_table$Tissue <- "Genes_MU"
-g1_table$Component <- "1"
-g1_table$Variable <- rownames(g1_table)
-
-write.table(g1_table,file = "comp1_variable_importance_genes_MU.txt",sep = "\t",row.names = TRUE)
-
-g1_table2 <- as.data.frame(g1$Genes_LI)
-g1_table2$Tissue <- "Genes_LI"
-g1_table2$Component <- "1"
-g1_table2$Variable <- rownames(g1_table2)
-write.table(g1_table2,file = "comp1_variable_importance_genes_LI.txt",sep = "\t",row.names = TRUE)
-
-g1_table3 <- as.data.frame(g1$Genes_BR)
-g1_table3$Tissue <- "Genes_BR"
-g1_table3$Component <- "1"
-g1_table3$Variable <- rownames(g1_table3)
-write.table(g1_table3,file = "comp1_variable_importance_genes_BR.txt",sep = "\t")
-
-g1_table4 <- as.data.frame(g1$ASVs_FE)
-g1_table4$Tissue <- "ASVs_FE"
-g1_table4$Component <- "1"
-g1_table4$Variable <- rownames(g1_table4)
-write.table(g1_table4,file = "comp1_variable_importance_ASVs_FE.txt",sep = "\t")
-
-g1_table5 <- as.data.frame(g1$ASVs_CE)
-g1_table5$Tissue <- "ASVs_CE"
-g1_table5$Component <- "1"
-g1_table5$Variable <- rownames(g1_table5)
-write.table(g1_table5,file = "comp1_variable_importance_ASVs_CE.txt",sep = "\t")
-
-### NOVO: FA e PHENO na componente 1
-g1_table6 <- as.data.frame(g1$FA)
-g1_table6$Tissue <- "FA"
-g1_table6$Component <- "1"
-g1_table6$Variable <- rownames(g1_table6)
-write.table(g1_table6, file = "comp1_variable_importance_FA.txt", sep = "\t")
-
-g1_table7 <- as.data.frame(g1$PHENO)
-g1_table7$Tissue <- "PHENO"
-g1_table7$Component <- "1"
-g1_table7$Variable <- rownames(g1_table7)
-write.table(g1_table7, file = "comp1_variable_importance_PHENO.txt", sep = "\t")
-
-# Second component
-
-png(filename = "biomarkers_candidates_2.png",width = 8,height = 6,units = "in",bg = "white",res = 300)
-
-g2 <- plotLoadings(final.diablo.model, comp = 2, contrib = 'max', method = 'median',legend.color = c("purple", "gold", "green"),size.legend = 0.8,legend.title = "Groups",size.name = 0.55,title = "Component 2")
-
-dev.off()
-
-
-# Exporting tables
-
-g2_table <- as.data.frame(g2$Genes_MU)
-g2_table$Tissue <- "Genes_MU"
-g2_table$Component <- "2"
-g2_table$Variable <- rownames(g2_table)
-write.table(g2_table,file = "comp2_variable_importance_genes_MU.txt",sep = "\t",row.names = TRUE)
-
-g2_table2 <- as.data.frame(g2$Genes_LI)
-g2_table2$Tissue <- "Genes_LI"
-g2_table2$Component <- "2"
-g2_table2$Variable <- rownames(g2_table2)
-write.table(g2_table2,file = "comp2_variable_importance_genes_LI.txt",sep = "\t",row.names = TRUE)
-
-g2_table3 <- as.data.frame(g2$Genes_BR)
-g2_table3$Tissue <- "Genes_BR"
-g2_table3$Component <- "2"
-g2_table3$Variable <- rownames(g2_table3)
-write.table(g2_table3,file = "comp2_variable_importance_Genes_BR.txt",sep = "\t")
-
-g2_table4 <- as.data.frame(g2$ASVs_FE)
-g2_table4$Tissue <- "ASVs_FE"
-g2_table4$Component <- "2"
-g2_table4$Variable <- rownames(g2_table4)
-write.table(g2_table4,file = "comp2_variable_importance_ASVs_FE.txt",sep = "\t")
-
-g2_table5 <- as.data.frame(g2$ASVs_CE)
-g2_table5$Tissue <- "ASVs_CE"
-g2_table5$Component <- "2"
-g2_table5$Variable <- rownames(g2_table5)
-write.table(g2_table5,file = "comp2_variable_importance_ASVs_CE.txt",sep = "\t")
-
-### NOVO: FA e PHENO na componente 2
-g2_table6 <- as.data.frame(g2$FA)
-g2_table6$Tissue <- "FA"
-g2_table6$Component <- "2"
-g2_table6$Variable <- rownames(g2_table6)
-write.table(g2_table6, file = "comp2_variable_importance_FA.txt", sep = "\t")
-
-g2_table7 <- as.data.frame(g2$PHENO)
-g2_table7$Tissue <- "PHENO"
-g2_table7$Component <- "2"
-g2_table7$Variable <- rownames(g2_table7)
-write.table(g2_table7, file = "comp2_variable_importance_PHENO.txt", sep = "\t")
-
-# Joining all the loadings into one table
-all_loadings <- rbind(
-  g1_table, g1_table2, g1_table3, g1_table4, g1_table5, g1_table6, g1_table7,
-  g2_table, g2_table2, g2_table3, g2_table4, g2_table5, g2_table6, g2_table7
-)
-
-all_loadings <- all_loadings[all_loadings$color != "white", ]
-write.table(all_loadings, file = "all_loadings.txt",
-            row.names = FALSE, quote = FALSE, sep = "\t")
-
-# Making a better figure to the loadings
-
-all_loadings1 <- all_loadings[all_loadings$Component == "1", ]
-
-# Now the plot
-comp1_loading <- ggplot(all_loadings1, aes(x = importance, y = reorder(Variable, importance), color = GroupContrib)) +
-  
-  # Lollipop sticks
-  geom_segment(aes(x = 0, xend = importance, y = Variable, yend = Variable), 
-               color = "darkgray", size = 1) +
-  
-  # Lollipop heads
-  geom_point(aes(fill = color), size = 5, shape = 21) +
-  
-  # Variable labels
-  geom_label(aes(label = Variable, x = -max(all_loadings1$importance) * 1.20), 
-             size = 4.0, fill = "gray90", label.size = 0.5, color = "black") +
-  
-  # Custom colors
-  scale_color_manual(values = c("Canola" = "green", "Soy" = "purple", "Fish" = "gold"),
-                     name = "Group Contribution",
-                     limits = c("Canola", "Soy", "Fish")) +
-  scale_fill_identity() +
-  
-  theme_minimal() +
-  
-  theme(
-    axis.text.y = element_blank(),
-    axis.ticks.y = element_blank(),
-    legend.position = "right",
-    panel.grid.major = element_line(color = "lightgray", size = 0.75),
-    panel.grid.minor = element_line(color = "lightgray", size = 0.30),
-    strip.background = element_rect(fill = "gray90", color = "gray70"),
-    strip.text = element_text(face = "bold", color = "black", size = 14),
-    
-    # 🔑 Title and legend size adjustments
-    plot.title = element_text(hjust = 0.5, size = 18, face = "bold"), # Bigger centered title
-    legend.title = element_text(size = 17, face = "bold"),             # Bigger legend title
-    legend.text  = element_text(size = 16)                             # Bigger legend labels
-  ) +
-  
-  labs(
-    title = "Component 1",
-    x = "Loading Score",
-    y = NULL,
-    color = "Group Contribution"
-  ) +
-  
-  facet_grid(rows = vars(Tissue), scales = "free_y", space = "free")
-
-ggsave(filename = "loading_plot_comp1.png",plot = comp1_loading,device = "png",dpi = 300,width = 30,height = 18,bg = "white")
-
-###### For component 2
-# Making a better figure to the loadings
-
-all_loadings2 <- all_loadings[all_loadings$Component == "2", ]
-
-# Now, create the plot
-# Now the plot
-comp2_loading <- ggplot(all_loadings2, aes(x = importance, y = reorder(Variable, importance), color = GroupContrib)) +
-  
-  # Lollipop sticks
-  geom_segment(aes(x = 0, xend = importance, y = Variable, yend = Variable), 
-               color = "darkgray", size = 1) +
-  
-  # Lollipop heads
-  geom_point(aes(fill = color), size = 5, shape = 21) +
-  
-  # Variable labels
-  geom_label(aes(label = Variable, x = -max(all_loadings1$importance) * 1.32), 
-             size = 4.0, fill = "gray90", label.size = 0.5, color = "black") +
-  
-  # Custom colors
-  scale_color_manual(values = c("Canola" = "green", "Soy" = "purple", "Fish" = "gold"),
-                     name = "Group Contribution",
-                     limits = c("Canola", "Soy", "Fish")) +
-  scale_fill_identity() +
-  
-  theme_minimal() +
-  
-  theme(
-    axis.text.y = element_blank(),
-    axis.ticks.y = element_blank(),
-    legend.position = "right",
-    panel.grid.major = element_line(color = "lightgray", size = 0.75),
-    panel.grid.minor = element_line(color = "lightgray", size = 0.30),
-    strip.background = element_rect(fill = "gray90", color = "gray70"),
-    strip.text = element_text(face = "bold", color = "black", size = 14),
-    
-    # 🔑 Title and legend size adjustments
-    plot.title = element_text(hjust = 0.5, size = 18, face = "bold"), # Bigger centered title
-    legend.title = element_text(size = 17, face = "bold"),             # Bigger legend title
-    legend.text  = element_text(size = 16)                             # Bigger legend labels
-  ) +
-  
-  labs(
-    title = "Component 2",
-    x = "Loading Score",
-    y = NULL,
-    color = "Group Contribution"
-  ) +
-  
-  facet_grid(rows = vars(Tissue), scales = "free_y", space = "free")
-
-ggsave(filename = "loading_plot_comp2.png",plot = comp2_loading,device = "png",dpi = 300,width = 24,height = 16,bg = "white")
-
-
-# Joining the Figures
-
-#g3 <- ggdraw() + draw_image("loading_plot_comp1.png")
-#g4 <- ggdraw() + draw_image("loading_plot_comp2.png")
-
-
-#combined_plot4 <- plot_grid(g3, g4, ncol = 2, labels = c("A", "B"))
-
-
-#ggsave("biomarkers_candidates_joined_top10.png", combined_plot4, width = 12, height = 7, dpi = 300,bg = "white")
-
-
-
-
-#windows(width = 14, height = 10) 
-
-cat('Figure and loading-table generation commands finished.\n')
-cat('Compare visually to the published versions before public release.\n')
+# S1 is the historical initial-model CV figure; it is intentionally not regenerated here.
+cat('Figure exports completed. Compare them to the final manuscript before use.\n')

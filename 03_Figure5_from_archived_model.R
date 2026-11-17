@@ -39,7 +39,7 @@ print(data.frame(Group = heatmap_group_order,
 dir.create(dirname(figure_path), showWarnings = FALSE, recursive = TRUE)
 
 png(filename = figure_path, width = 12, height = 15,
-    units = "in", bg = "white", res = 300)
+    units = "in", bg = "white", res = 600)
 
 cimDiablo(
   final.diablo.model,
@@ -47,8 +47,8 @@ cimDiablo(
     "#228B22",     # Genes_MU
     "#32CD32",     # Genes_LI
     "springgreen", # Genes_BR
-    "#4682B4",     # ASVs_FE
-    "#8B4513",     # ASVs_CE
+    "#4682B4",     # ASVs_CE
+    "#8B4513",     # ASVs_FE
     "orange",      # FA
     "red3"         # PHENO
   ),

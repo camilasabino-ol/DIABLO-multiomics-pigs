@@ -1,8 +1,8 @@
 # 01_candidate_gene_lists.R — candidate gene lists per tissue (DRAFT)
 # This reproduces the de-duplication logic of Salvando_ListadeGenes.R.
-# Candidate genes were functionally annotated using DAVID (confirmed by authors).
+# Candidate lists were supplied; their exact derivation and role of DAVID require author confirmation.
 # Assumes columns 'Genes' contain one or more IDs separated by commas.
-# DAVID functional annotation was an upstream step, not reproduced by this script.
+# Upstream construction of the candidate lists is not reproduced by this script.
 # This script begins with the three author-supplied candidate-gene spreadsheets.
 
 suppressPackageStartupMessages({

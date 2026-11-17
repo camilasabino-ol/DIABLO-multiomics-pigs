@@ -1,4 +1,4 @@
-# Dietary lipid sources and host–microbiota multi-omics integration in pigs
+# Integrative multi-omics identifies coordinated molecular and microbial signatures associated with dietary lipid sources in pigs
 
 ## Reproducibility code — author-reviewed methods, code-only repository
 
@@ -33,13 +33,14 @@ All R scripts and documentation files are stored in the repository root (top-lev
 | `03_Figure5_from_archived_model.R` | Corrected Figure 5 heatmap without fitting |
 | `04_environment_versions.R` | Current software version report (not a historical version record) |
 
-## Functional annotation and transcriptome selection
+## Candidate-gene lists and transcriptome selection
 
-The authors performed **functional annotation using DAVID**. The resulting
-candidate-gene lists were provided as tissue-specific Excel files. The scripts
+Candidate-gene lists were provided as tissue-specific Excel files. The scripts
 above document deduplication, expression-based TPM filtering and subsequent
-selection by expression variability. DAVID is an external annotation platform;
-its **software source code need not be copied** into this repository.
+selection by expression variability. A historical script refers to a DAVID-related
+workbook; the exact derivation of the final tissue-specific candidate lists
+requires author confirmation. The code does not establish the annotation criteria
+used to construct those lists.
 
 Historical source code for the liver list referred to `USARESSE_LIVER.xlsx`, while
 the workbook supplied for this package is `Genes_Liver.xlsx`. Their identity
@@ -83,20 +84,34 @@ The final 44-sample subset is the one in the archived DIABLO input matrices.
 - Featurewise **mean-centering and unit-variance scaling** (`scale=TRUE`).
 - Number-of-component performance evaluation: 10-fold repeated M-fold CV,
   100 repetitions (`perf`). Feature-number tuning: 10-fold repeated M-fold CV,
-  10 repetitions (`tune.block.splsda`, `max.dist`).
+  10 repetitions (`tune.block.splsda`, `max.dist`). The number of components
+  was selected from `choice.ncomp$WeightedVote["Overall.BER", "max.dist"]`
+  (five components). Final model performance was assessed separately using
+  10-fold CV, 20 repetitions and `max.dist`.
 - The original script's `circosPlot()` and `network()` use correlation cutoff
   **0.80**, which is distinct from the 0.7 DIABLO design weight.
 - The original input matrices were checked against the RDS: exactly matching
   sample and feature names/order and values after z-scoring (within floating-
   point precision, maximum deviations near 1e-15).
-- Exact final `keepX` values: `ARCHIVED_MODEL_PARAMETERS.md`.
+- Exact final `keepX` values: `ARCHIVED_MODEL_PARAMETERS.md` and Supplementary
+  Table S4. Supplementary Tables S3, S5 and S6 provide feature correlations,
+  within-block explained variance and loading values, respectively.
+- Block-to-block correlations (Figure 3) are Pearson correlations between
+  block-specific latent scores, calculated separately for Components 1 and 2.
+  Circos links instead use the DIABLO similarity matrix (absolute cutoff 0.80).
+  Both are descriptive; no independent significance testing was performed.
+- No additional regression-based adjustment for biological or technical
+  covariates was performed on the input features before DIABLO integration.
 
 ## Reproducibility and software
 
 The archived RDS reports **R 4.5.1** as the serialization writer version. An
 original script comment mentions `mixOmics 6.28.0` used in November 2025;
 that note **does not independently establish** the package version at the
-August 2026 final-model run. `04_environment_versions.R` reports
+August 2026 final-model run. Figures 1–5 were regenerated in the available R 4.5.1 environment using
+`mixOmics` 6.32.0; the revised manuscript also reports `igraph` 2.2.1,
+`cowplot` 1.2.0, `viridis` 0.6.5, `ggplot2` 4.0.1 and `BiocParallel` 1.42.2
+as the available computational environment. `04_environment_versions.R` reports
 packages installed in a current environment; it must not be misrepresented
 as historical `sessionInfo()`.
 
@@ -120,9 +135,36 @@ The script `01_fit_DIABLO_FUTURE_RERUN.R` expects inputs in `data/` (or
 `DIABLO_OUTPUT_DIR`); it is not needed to recreate images from an archived RDS.
 Run image generation only with the necessary mixOmics packages available.
 
+## Regenerating manuscript figures without refitting
+
+```bash
+Rscript 02_figures_from_archived_model.R path/to/final_diablo_model.rds results/figures
+```
+
+An optional third argument is the original `all_loadings.txt` table from the
+archived run. Its selected feature names and signed loading values are checked
+against the model before plotting. Without that table, the script obtains
+loading/group-contribution information using `plotLoadings()`. The revised
+Figure 1 uses separate panels, Figure 4A excludes the response block Y, and
+Figures 1–5 are exported at 600 dpi. Figure 5 can also be generated separately
+with `03_Figure5_from_archived_model.R`.
+
+Supplementary Figure S1 is the original 300 dpi image of the initial
+100-repeat cross-validation, not a regenerated result. The historical execution
+log confirms its origin; the corresponding performance object was not recovered.
+No new CV was performed during figure preparation.
+
+Sample metadata for the 44 pigs are provided in Supplementary Table S8 of
+the accompanying manuscript. These are not the original model input matrices
+and are not included in this code-only repository.
+
 ## Documentation status
 
-The source model and its original inputs were verified. Reorganized scripts have
-**not** been run end-to-end with all upstream source tables; specific method
+The source model and its original inputs were verified. During manuscript
+revision, the original Component 1 and 2 loading table was checked against the
+archived model, block-score correlations were recalculated directly from that
+model, and the main figures were re-exported without model refitting. The
+consolidated public-facing scripts have **not** been tested end-to-end with all
+upstream source tables; specific method
 steps (e.g. phenotype name mapping and derived FA calculations) are described
 and not presented as independently regenerated. See `READINESS_NOTE.md`.
